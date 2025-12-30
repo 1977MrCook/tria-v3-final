@@ -1,0 +1,11 @@
+{
+  "name": "tria-platform-functions",
+  "version": "3.0.0",
+  "description": "Netlify Functions for TrIA Platform",
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@google/generative-ai": "^0.21.0",
+    "openai": "^4.77.0"
+  }
+}
