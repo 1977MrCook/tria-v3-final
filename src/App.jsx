@@ -3,16 +3,19 @@ import './App.css'
 
 const AVAILABLE_MODELS = {
   openai: [
-    { id: 'gpt-4o', name: 'GPT-4o', description: 'Modelo más avanzado de OpenAI', icon: '🟢', provider: 'openai' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Versión rápida y económica', icon: '🟢', provider: 'openai' },
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Modelo más avanzado', icon: '🟢', provider: 'openai' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Rápido y económico', icon: '🟢', provider: 'openai' },
+    { id: 'o1', name: 'o1', description: 'Razonamiento profundo', icon: '🟢', provider: 'openai' },
   ],
   anthropic: [
     { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Equilibrio perfecto', icon: '🟣', provider: 'anthropic' },
     { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', description: 'Máxima inteligencia', icon: '🟣', provider: 'anthropic' },
+    { id: 'claude-haiku-4-20250514', name: 'Claude Haiku 4', description: 'Velocidad extrema', icon: '🟣', provider: 'anthropic' },
   ],
   google: [
-    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Modelo estable y potente', icon: '🔵', provider: 'google' },
-    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Ultrarrápido', icon: '🔵', provider: 'google' },
+    { id: 'gemini-3-flash', name: 'Gemini 3 Flash', description: 'Última generación rápida', icon: '🔵', provider: 'google' },
+    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', description: 'Máxima capacidad', icon: '🔵', provider: 'google' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Versión estable', icon: '🔵', provider: 'google' },
   ]
 }
 
@@ -27,6 +30,7 @@ export default function App() {
   const [inputValue, setInputValue] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
+  const [showModelSelector, setShowModelSelector] = useState(false)
   
   const [currency, setCurrency] = useState('CLP')
   const [budgetLimit, setBudgetLimit] = useState(50000)
@@ -75,7 +79,7 @@ export default function App() {
         body: JSON.stringify({
           message: userMessage.content,
           models: selectedModelsList,
-          mode: mode === 'collaborative' ? 'roles' : mode === 'voting' ? 'debate' : 'hybrid',
+          mode: mode,
           conversationHistory: messages.slice(-6)
         })
       })
@@ -107,6 +111,7 @@ export default function App() {
   }
 
   const budgetPercentage = Math.min((totalSpent / budgetLimit) * 100, 100)
+  const selectedCount = Object.values(selectedModels).filter(Boolean).length
 
   return (
     <div className="app-container">
@@ -116,11 +121,7 @@ export default function App() {
       <div className={`config-modal ${showConfig ? 'open' : ''}`}>
         <div className="config-header">
           <h2>⚙️ Configuración</h2>
-          <button onClick={() => setShowConfig(false)} className="close-btn">
-            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <button onClick={() => setShowConfig(false)} className="close-btn">×</button>
         </div>
         
         <div className="config-content">
@@ -160,14 +161,8 @@ export default function App() {
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-header">
-          <div className="logo-section">
-            <img src="/logo-tria.jpg" alt="TrIA" className="logo" />
-            <div>
-              <div className="logo-text">TrIA</div>
-              <div className="version">Platform v3.0</div>
-            </div>
-          </div>
-          
+          <img src="/logo-tria.jpg" alt="TrIA" className="logo" />
+          <div className="logo-text">TrIA</div>
           <button onClick={() => { setMessages([]); setInputValue(''); setTotalSpent(0); setResponseCount(0) }} className="new-chat-btn">
             + Nueva Conversación
           </button>
@@ -177,13 +172,9 @@ export default function App() {
           <a href="#" className="nav-item active">
             <span>💬</span>
             <span>Chat</span>
-            <span className="badge">{messages.length}</span>
+            {messages.length > 0 && <span className="badge">{messages.length}</span>}
           </a>
         </nav>
-
-        <div className="sidebar-footer">
-          <div className="powered-by">Powered by Multi-AI</div>
-        </div>
       </aside>
 
       {/* Main Area */}
@@ -192,16 +183,10 @@ export default function App() {
         <header className="header">
           <div>
             <h1 className="header-title">Orquestación Multi-IA</h1>
-            <p className="header-status">
-              <span className="status-indicator" />
-              <span className="status-text">LIVE</span>
-              <span>·</span>
-              <span>Listo para colaborar</span>
-            </p>
           </div>
           <div className="header-stats">
             <div className="stat-card green">
-              <div className="stat-value">{responseCount}</div>
+              <div className="stat-value">{responseCount.toLocaleString()}</div>
               <div className="stat-label">respuestas</div>
             </div>
             
@@ -211,41 +196,41 @@ export default function App() {
             </div>
             
             <button onClick={() => setShowConfig(true)} className="settings-btn">
-              <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+              ⚙️
             </button>
           </div>
         </header>
 
-        {/* Controls */}
-        <div className="controls">
-          <div className="controls-inner">
-            {/* Mode Selector */}
-            <div className="control-group">
-              <label className="control-label">Modo de colaboración</label>
-              <div className="mode-buttons">
-                {[
-                  { id: 'collaborative', icon: '👥', label: 'Colaborativo' },
-                  { id: 'voting', icon: '📋', label: 'Votación' },
-                  { id: 'hybrid', icon: '⚡', label: 'Híbrido' }
-                ].map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => setMode(m.id)}
-                    className={`mode-btn ${mode === m.id ? 'active' : ''}`}
-                  >
-                    {m.icon} {m.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+        {/* Controls Bar */}
+        <div className="controls-bar">
+          <div className="mode-buttons-compact">
+            {[
+              { id: 'collaborative', icon: '👥', label: 'Colaborativo' },
+              { id: 'voting', icon: '📋', label: 'Votación' },
+              { id: 'hybrid', icon: '⚡', label: 'Híbrido' }
+            ].map(m => (
+              <button
+                key={m.id}
+                onClick={() => setMode(m.id)}
+                className={`mode-btn-compact ${mode === m.id ? 'active' : ''}`}
+              >
+                {m.icon} {m.label}
+              </button>
+            ))}
+          </div>
 
-            {/* Model Selector */}
-            <div className="control-group">
-              <label className="control-label">🤖 Selecciona las IAs</label>
-              
+          <button 
+            onClick={() => setShowModelSelector(!showModelSelector)}
+            className="toggle-models-btn"
+          >
+            {showModelSelector ? '▲ Ocultar' : '▼ Seleccionar'} Modelos ({selectedCount})
+          </button>
+        </div>
+
+        {/* Model Selector - Colapsable */}
+        {showModelSelector && (
+          <div className="controls">
+            <div className="controls-inner">
               {Object.entries(AVAILABLE_MODELS).map(([provider, models]) => (
                 <div key={provider} className="provider-section">
                   <div className="provider-label">
@@ -264,8 +249,9 @@ export default function App() {
                       </div>
                       
                       {selectedModels[model.id] && (
-                        <div className="model-instructions">
+                        <div className="model-instructions-container">
                           <textarea
+                            className="model-instructions"
                             value={modelInstructions[model.id] || ''}
                             onChange={(e) => setInstruction(model.id, e.target.value)}
                             placeholder={`Instrucciones para ${model.name}...`}
@@ -279,7 +265,7 @@ export default function App() {
               ))}
             </div>
           </div>
-        </div>
+        )}
 
         {/* Chat Area */}
         <div className="chat-area">
@@ -298,7 +284,6 @@ export default function App() {
                   
                   {msg.debate && msg.debate.rounds && (
                     <div className="debate-info">
-                      <h4>📋 Proceso de colaboración:</h4>
                       {msg.debate.rounds.map((round, ridx) => (
                         <div key={ridx} className="round">
                           <strong>Ronda {ridx + 1}:</strong>
@@ -310,11 +295,13 @@ export default function App() {
                           ))}
                         </div>
                       ))}
-                      <div className="stats">
-                        <span>💰 ${(msg.debate.stats?.totalCost || 0).toFixed(4)}</span>
-                        <span>⏱️ {msg.debate.stats?.totalTime || 0}s</span>
-                        <span>🔄 {msg.debate.stats?.totalRounds || 0} rondas</span>
-                      </div>
+                      {msg.debate.stats && (
+                        <div className="stats">
+                          💰 ${(msg.debate.stats.totalCost || 0).toFixed(4)} · 
+                          ⏱️ {msg.debate.stats.totalTime || 0}s · 
+                          🔄 {msg.debate.stats.totalRounds || 0} rondas
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -338,24 +325,22 @@ export default function App() {
 
         {/* Input Area */}
         <div className="input-area">
-          <div className="input-container">
-            <textarea
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSend()
-                }
-              }}
-              placeholder="Escribe tu mensaje... (Enter para enviar, Shift+Enter para nueva línea)"
-              rows={3}
-              disabled={isProcessing}
-            />
-            <button onClick={handleSend} disabled={!inputValue.trim() || isProcessing} className="send-btn">
-              🚀 Enviar
-            </button>
-          </div>
+          <textarea
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSend()
+              }
+            }}
+            placeholder="Escribe tu mensaje... (Enter para enviar, Shift+Enter para nueva línea)"
+            rows={2}
+            disabled={isProcessing}
+          />
+          <button onClick={handleSend} disabled={!inputValue.trim() || isProcessing} className="send-btn">
+            🚀 Enviar
+          </button>
         </div>
       </div>
     </div>
