@@ -1,21 +1,25 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
+import RatingModal from './RatingModal'
+import MLDashboard from './MLDashboard'
+import { saveEvaluation, getEvaluations, getCurrentPhase } from './mlEngine'
 
 const AVAILABLE_MODELS = {
   openai: [
-    { id: 'gpt-4o', name: 'GPT-4o', description: 'Modelo más avanzado', icon: '🟢', provider: 'openai' },
+    { id: 'o1-preview', name: 'o1-preview', description: 'Razonamiento profundo máximo', icon: '🟢', provider: 'openai' },
+    { id: 'o1-mini', name: 'o1-mini', description: 'Razonamiento rápido', icon: '🟢', provider: 'openai' },
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Equilibrado y potente', icon: '🟢', provider: 'openai' },
     { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Rápido y económico', icon: '🟢', provider: 'openai' },
-    { id: 'o1', name: 'o1', description: 'Razonamiento profundo', icon: '🟢', provider: 'openai' },
   ],
   anthropic: [
-    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Equilibrio perfecto', icon: '🟣', provider: 'anthropic' },
     { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', description: 'Máxima inteligencia', icon: '🟣', provider: 'anthropic' },
+    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', description: 'Equilibrio perfecto', icon: '🟣', provider: 'anthropic' },
     { id: 'claude-haiku-4-20250514', name: 'Claude Haiku 4', description: 'Velocidad extrema', icon: '🟣', provider: 'anthropic' },
   ],
   google: [
-    { id: 'gemini-3-flash', name: 'Gemini 3 Flash', description: 'Última generación rápida', icon: '🔵', provider: 'google' },
-    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', description: 'Máxima capacidad', icon: '🔵', provider: 'google' },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Versión estable', icon: '🔵', provider: 'google' },
+    { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash', description: 'Experimental más rápido', icon: '🔵', provider: 'google' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Máxima capacidad', icon: '🔵', provider: 'google' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Rápido y eficiente', icon: '🔵', provider: 'google' },
   ]
 }
 
@@ -31,11 +35,27 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
+  const [showMLDashboard, setShowMLDashboard] = useState(false)
   
   const [currency, setCurrency] = useState('CLP')
   const [budgetLimit, setBudgetLimit] = useState(50000)
   const [totalSpent, setTotalSpent] = useState(0)
   const [responseCount, setResponseCount] = useState(0)
+
+  // Rating & ML
+  const [showRatingModal, setShowRatingModal] = useState(false)
+  const [pendingRating, setPendingRating] = useState(null)
+  const [evaluations, setEvaluations] = useState([])
+  const [mlPhase, setMlPhase] = useState(null)
+
+  useEffect(() => {
+    const evals = getEvaluations()
+    setEvaluations(evals)
+    if (evals.length > 0) {
+      const phase = getCurrentPhase(evals)
+      setMlPhase(phase)
+    }
+  }, [])
 
   const toggleModel = (modelId) => {
     setSelectedModels(prev => ({ ...prev, [modelId]: !prev[modelId] }))
@@ -88,16 +108,26 @@ export default function App() {
 
       const data = await response.json()
       
-      setMessages(prev => [...prev, {
+      const assistantMessage = {
         role: 'assistant',
         content: data.finalResponse,
         debate: data.debate
-      }])
+      }
+      
+      setMessages(prev => [...prev, assistantMessage])
 
       if (data.debate?.stats?.totalCost) {
         setTotalSpent(prev => prev + (data.debate.stats.totalCost * 800))
       }
       setResponseCount(prev => prev + 1)
+
+      // Mostrar modal de rating
+      setPendingRating({
+        models: selectedModelsList.map(m => m.id),
+        mode: mode,
+        debate: data.debate
+      })
+      setShowRatingModal(true)
 
     } catch (error) {
       console.error('Error:', error)
@@ -110,12 +140,33 @@ export default function App() {
     }
   }
 
+  const handleRatingSubmit = (ratingData) => {
+    if (!pendingRating) return
+
+    const evaluation = {
+      ...ratingData,
+      models: pendingRating.models,
+      mode: pendingRating.mode,
+      timestamp: Date.now()
+    }
+
+    const newEvals = saveEvaluation(evaluation)
+    setEvaluations(newEvals)
+    
+    const phase = getCurrentPhase(newEvals)
+    setMlPhase(phase)
+    
+    setPendingRating(null)
+  }
+
   const budgetPercentage = Math.min((totalSpent / budgetLimit) * 100, 100)
   const selectedCount = Object.values(selectedModels).filter(Boolean).length
+  const allModels = [...AVAILABLE_MODELS.openai, ...AVAILABLE_MODELS.anthropic, ...AVAILABLE_MODELS.google]
 
   return (
     <div className="app-container">
       {showConfig && <div className="overlay" onClick={() => setShowConfig(false)} />}
+      {showMLDashboard && <div className="overlay" onClick={() => setShowMLDashboard(false)} />}
 
       {/* Config Modal */}
       <div className={`config-modal ${showConfig ? 'open' : ''}`}>
@@ -158,6 +209,23 @@ export default function App() {
         </div>
       </div>
 
+      {/* ML Dashboard Modal */}
+      {showMLDashboard && (
+        <MLDashboard 
+          evaluations={evaluations}
+          models={allModels}
+          onClose={() => setShowMLDashboard(false)}
+        />
+      )}
+
+      {/* Rating Modal */}
+      <RatingModal
+        isOpen={showRatingModal}
+        onClose={() => setShowRatingModal(false)}
+        onSubmit={handleRatingSubmit}
+        debate={pendingRating?.debate}
+      />
+
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-header">
@@ -174,7 +242,29 @@ export default function App() {
             <span>Chat</span>
             {messages.length > 0 && <span className="badge">{messages.length}</span>}
           </a>
+          <a href="#" className="nav-item" onClick={(e) => { e.preventDefault(); setShowMLDashboard(true) }}>
+            <span>🤖</span>
+            <span>Machine Learning</span>
+            {mlPhase && <span className="badge">{evaluations.length}</span>}
+          </a>
         </nav>
+
+        {/* ML Mini Status */}
+        {mlPhase && (
+          <div className="ml-mini-status">
+            <h4>🤖 ML Status</h4>
+            <div className="mini-phase-badge" data-phase={mlPhase.phase}>
+              {mlPhase.phase === 'learning' && '🌱'}
+              {mlPhase.phase === 'suggested' && '📈'}
+              {mlPhase.phase === 'optimized' && '✅'}
+              <span>{mlPhase.count}/{mlPhase.target}</span>
+            </div>
+            <div className="mini-progress">
+              <div className="mini-progress-fill" style={{ width: `${mlPhase.progress}%` }} />
+            </div>
+            <small>{mlPhase.message}</small>
+          </div>
+        )}
       </aside>
 
       {/* Main Area */}
@@ -254,7 +344,7 @@ export default function App() {
                             className="model-instructions"
                             value={modelInstructions[model.id] || ''}
                             onChange={(e) => setInstruction(model.id, e.target.value)}
-                            placeholder={`Instrucciones para ${model.name}...`}
+                            placeholder={`Instrucciones personalizadas para ${model.name}...`}
                             rows="2"
                           />
                         </div>
@@ -272,8 +362,13 @@ export default function App() {
           <div className="messages">
             {messages.length === 0 && (
               <div className="welcome">
-                <h2>¡Bienvenido a TrIA Platform!</h2>
-                <p>Selecciona tus IAs y empieza a colaborar</p>
+                <h2>¡Bienvenido a TrIA Platform v4.0!</h2>
+                <p>Colaboración real entre IAs con Machine Learning</p>
+                {mlPhase && (
+                  <p className="ml-welcome-hint">
+                    🤖 {mlPhase.message}
+                  </p>
+                )}
               </div>
             )}
 
@@ -284,22 +379,38 @@ export default function App() {
                   
                   {msg.debate && msg.debate.rounds && (
                     <div className="debate-info">
-                      {msg.debate.rounds.map((round, ridx) => (
-                        <div key={ridx} className="round">
-                          <strong>Ronda {ridx + 1}:</strong>
-                          {round.responses.map((resp, respIdx) => (
-                            <div key={respIdx} className="response">
-                              <strong>{resp.model}:</strong>
-                              <p>{resp.content?.substring(0, 200)}...</p>
-                            </div>
-                          ))}
-                        </div>
-                      ))}
+                      <details>
+                        <summary>📊 Ver debate completo ({msg.debate.rounds.length} rondas)</summary>
+                        {msg.debate.rounds.map((round, ridx) => (
+                          <div key={ridx} className="round">
+                            <strong>
+                              Ronda {ridx + 1}
+                              {round.isCritique && ' - Crítica'}
+                              {round.isVoting && ' - Votación'}
+                              {round.responses?.[0]?.isSynthesis && ' - Síntesis Final'}
+                            </strong>
+                            {round.responses.map((resp, respIdx) => (
+                              <div key={respIdx} className="response">
+                                <strong>{resp.model}:</strong>
+                                <p>{resp.content?.substring(0, 300)}{resp.content?.length > 300 ? '...' : ''}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </details>
+                      
                       {msg.debate.stats && (
                         <div className="stats">
                           💰 ${(msg.debate.stats.totalCost || 0).toFixed(4)} · 
                           ⏱️ {msg.debate.stats.totalTime || 0}s · 
                           🔄 {msg.debate.stats.totalRounds || 0} rondas
+                          {msg.debate.synthesizer && (
+                            <>
+                              {' · '}
+                              🤖 Síntesis: {msg.debate.synthesizer.synthesizerName}
+                              {msg.debate.synthesizer.wasRandom && ' (🎲)'}
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -316,7 +427,9 @@ export default function App() {
                     <span></span>
                     <span></span>
                   </div>
-                  <span className="typing-text">Las IAs están pensando...</span>
+                  <span className="typing-text">
+                    {mode === 'voting' ? 'Debatiendo y votando...' : 'Las IAs están colaborando...'}
+                  </span>
                 </div>
               </div>
             )}
