@@ -6,11 +6,10 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY)
 
-// Modelos Gemini 3.0 correctos (Diciembre 2025)
 const GEMINI_MODELS = {
-  'gemini-3-flash': 'gemini-3-flash',
-  'gemini-3-pro': 'gemini-3-pro', 
-  'gemini-2.5-pro': 'gemini-2.5-pro'
+  'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp',
+  'gemini-1.5-pro': 'gemini-1.5-pro',
+  'gemini-1.5-flash': 'gemini-1.5-flash'
 }
 
 async function callModel(model, prompt, systemPrompt) {
@@ -24,7 +23,7 @@ async function callModel(model, prompt, systemPrompt) {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 1500
+        max_tokens: 2000
       })
       
       return {
@@ -38,7 +37,7 @@ async function callModel(model, prompt, systemPrompt) {
     if (model.provider === 'anthropic') {
       const response = await anthropic.messages.create({
         model: model.id,
-        max_tokens: 1500,
+        max_tokens: 2000,
         system: systemPrompt,
         messages: [{ role: 'user', content: prompt }]
       })
@@ -91,6 +90,15 @@ const withSystem = (model, orchestrationText) => {
   return base ? `${base}\n\n${orchestrationText}` : orchestrationText
 }
 
+function selectRandomSynthesizer(models) {
+  const randomIndex = Math.floor(Math.random() * models.length)
+  return {
+    model: models[randomIndex],
+    index: randomIndex,
+    wasRandom: true
+  }
+}
+
 export const handler = async (event) => {
   if (event.httpMethod && event.httpMethod.toUpperCase() === 'OPTIONS') {
     return {
@@ -133,11 +141,13 @@ export const handler = async (event) => {
     let totalTime = 0
     let finalResponse = ''
     let votingMeta = undefined
+    let synthesizerInfo = undefined
 
-    // MODO COLABORATIVO
+    // MODO COLABORATIVO CON SÍNTESIS ALEATORIA ML
     if (mode === 'collaborative') {
       const prev = []
 
+      // Rondas colaborativas normales
       for (let i = 0; i < models.length; i++) {
         const m = models[i]
         const me = safeName(m)
@@ -146,16 +156,12 @@ export const handler = async (event) => {
         if (i === 0) {
           orchestrationSystem =
             `Eres ${me}. Responde la pregunta del usuario de forma completa.\n` +
-            `Estás colaborando con otras IAs; tu respuesta será leída por las siguientes IAs.`
-        } else if (i === models.length - 1) {
-          orchestrationSystem =
-            `Eres ${me}. Lee las respuestas anteriores.\n` +
-            `Crea la mejor síntesis final combinando lo mejor de todas.`
+            `Estás colaborando con otras IAs; tu respuesta será leída por las siguientes.`
         } else {
           const prevName = prev[prev.length - 1]?.model || 'la IA anterior'
           orchestrationSystem =
             `Eres ${me}. Lee la respuesta de ${prevName}.\n` +
-            `Identifica qué falta o qué se puede mejorar. Da tu versión mejorada.`
+            `Identifica qué falta, qué está mal, o qué se puede mejorar. Da tu versión mejorada.`
         }
 
         const systemPrompt = withSystem(m, orchestrationSystem)
@@ -174,21 +180,53 @@ export const handler = async (event) => {
 
         rounds.push({ round: i + 1, responses: [res] })
 
-        if (res && typeof res.content === 'string' && res.content.trim()) {
+        if (res && typeof res.content === 'string' && res.content.trim() && !res.error) {
           prev.push({ model: res.model, content: res.content })
         }
       }
 
-      const lastNonEmpty = [...rounds]
-        .reverse()
-        .map((r) => r.responses && r.responses[0])
-        .find((x) => x && typeof x.content === 'string' && x.content.trim())
+      // SÍNTESIS FINAL: Selección aleatoria
+      const selection = selectRandomSynthesizer(models)
+      const synthesizer = selection.model
+      const synthesizerName = safeName(synthesizer)
 
-      finalResponse = lastNonEmpty ? lastNonEmpty.content : 'No se pudo generar respuesta.'
+      synthesizerInfo = {
+        synthesizer: synthesizer.id,
+        synthesizerName: synthesizerName,
+        wasRandom: true,
+        index: selection.index
+      }
+
+      const allContent = prev.map((p, idx) => `[${idx + 1}] ${p.model}:\n${p.content}`).join('\n\n')
+
+      const synthesisPrompt =
+        `Eres ${synthesizerName}. Has sido seleccionado para crear la RESPUESTA FINAL.\n\n` +
+        `Lee TODAS las propuestas de las IAs (incluyendo la tuya si participaste):\n\n${allContent}\n\n` +
+        `Pregunta original: ${message}\n\n` +
+        `Crea UNA respuesta final que:\n` +
+        `1. Integre lo mejor de cada propuesta\n` +
+        `2. Solucione debilidades identificadas\n` +
+        `3. Sea completa, clara y lista para usar\n` +
+        `4. No menciones que estás sintetizando, simplemente da la respuesta final\n\n` +
+        `IMPORTANTE: Tu respuesta debe ser la DEFINITIVA para el usuario.`
+
+      const synthesisSystemPrompt = withSystem(synthesizer, 'Eres un sintetizador experto.')
+
+      const synthesisRes = await callModel(synthesizer, synthesisPrompt, synthesisSystemPrompt)
+      totalCost += Number(synthesisRes.cost || 0)
+      totalTime += Number(synthesisRes.time || 0)
+
+      rounds.push({ 
+        round: rounds.length + 1, 
+        responses: [{ ...synthesisRes, isSynthesis: true }] 
+      })
+
+      finalResponse = synthesisRes.content || 'No se pudo generar síntesis.'
     }
 
-    // MODO VOTACIÓN
+    // MODO VOTACIÓN CON CRÍTICA Y SÍNTESIS
     if (mode === 'voting') {
+      // RONDA 1: Propuestas
       const proposalPromises = models.map((m) => {
         const sys = withSystem(
           m,
@@ -220,10 +258,45 @@ export const handler = async (event) => {
       )
       const proposalSet = validProposals.length ? validProposals : proposals
 
-      const proposalTextList = proposalSet
-        .map((p, i) => `[${i + 1}] ${p.model}:\n${p.content}`)
-        .join('\n\n')
+      // RONDA 2: CRÍTICA CRUZADA (NUEVO)
+      const criticPromises = models.map((m, idx) => {
+        const myProposal = proposals[idx]
+        const otherProposals = proposalSet
+          .filter((p, i) => i !== idx)
+          .map((p, i) => `[${i + 1}] ${p.model}:\n${p.content}`)
+          .join('\n\n')
 
+        const criticPrompt =
+          `Eres ${safeName(m)}. Lee las propuestas de las OTRAS IAs (NO la tuya):\n\n${otherProposals}\n\n` +
+          `Pregunta original: ${message}\n\n` +
+          `Analiza OBJETIVAMENTE cada propuesta:\n` +
+          `- ✅ Fortalezas\n` +
+          `- ❌ Debilidades\n` +
+          `- 📝 Qué falta\n\n` +
+          `IMPORTANTE: NO menciones tu propia propuesta. Sé constructivo y específico.`
+
+        const sys = withSystem(m, 'Eres un crítico analítico y objetivo.')
+        return callModel(m, criticPrompt, sys)
+      })
+
+      const criticSettled = await Promise.allSettled(criticPromises)
+      const critics = criticSettled.map((s, idx) => {
+        if (s.status === 'fulfilled') return s.value
+        return {
+          model: safeName(models[idx]),
+          content: 'No pudo generar crítica',
+          cost: 0,
+          time: 0,
+          error: true
+        }
+      })
+
+      totalCost += critics.reduce((acc, r) => acc + Number(r.cost || 0), 0)
+      totalTime += critics.reduce((acc, r) => acc + Number(r.time || 0), 0)
+
+      rounds.push({ round: 2, responses: critics, isCritique: true })
+
+      // RONDA 3: VOTACIÓN (con críticas)
       const targetMap = new Map()
       proposalSet.forEach((p) => targetMap.set(normalizeKey(p.model), p.model))
 
@@ -250,41 +323,57 @@ export const handler = async (event) => {
 
       const voteCounts = {}
       const voteDetails = []
-      const round2Responses = []
+      const voteResponses = []
+
+      const proposalTextList = proposalSet
+        .map((p, i) => `[${i + 1}] ${p.model}:\n${p.content}`)
+        .join('\n\n')
+
+      const criticTextList = critics
+        .filter(c => !c.error)
+        .map((c, i) => `Crítica de ${c.model}:\n${c.content}`)
+        .join('\n\n')
 
       for (let i = 0; i < models.length; i++) {
         const m = models[i]
         const me = safeName(m)
 
-        const sys = withSystem(
-          m,
-          `Eres ${me}. Lee estas propuestas y vota por la mejor.\n` +
-            `Formato: VOTO: [nombre] | RAZÓN: [texto]`
-        )
+        const votePrompt =
+          `Eres ${me}. Lee las propuestas:\n\n${proposalTextList}\n\n` +
+          `Lee las críticas:\n\n${criticTextList}\n\n` +
+          `Pregunta: ${message}\n\n` +
+          `Vota por la MEJOR propuesta basándote en las críticas.\n` +
+          `PROHIBIDO: No puedes votar por ti mismo.\n` +
+          `Formato: VOTO: [nombre] | RAZÓN: [tu justificación basada en evidencia]`
 
-        const prompt =
-          `Pregunta: ${message}\n\nPropuestas:\n${proposalTextList}\n\nEmite tu voto.`
-
-        const res = await callModel(m, prompt, sys)
+        const sys = withSystem(m, 'Eres un evaluador objetivo.')
+        const res = await callModel(m, votePrompt, sys)
 
         totalCost += Number(res.cost || 0)
         totalTime += Number(res.time || 0)
-
-        round2Responses.push(res)
+        voteResponses.push(res)
 
         if (!res?.error && typeof res.content === 'string' && res.content.trim()) {
           const { target, reason } = parseVote(res.content)
           const resolved = resolveTarget(target)
-          if (resolved) {
+          
+          // Anti-sesgo: verificar que no vote por sí mismo
+          if (resolved && normalizeKey(resolved) !== normalizeKey(me)) {
             voteCounts[resolved] = (voteCounts[resolved] || 0) + 1
             voteDetails.push({ voter: res.model, vote: resolved, reason: reason || '' })
+          } else if (resolved && normalizeKey(resolved) === normalizeKey(me)) {
+            voteDetails.push({ 
+              voter: res.model, 
+              vote: null, 
+              reason: 'VOTO INVÁLIDO: Intentó votar por sí mismo' 
+            })
           } else {
             voteDetails.push({ voter: res.model, vote: null, reason: reason || '' })
           }
         }
       }
 
-      rounds.push({ round: 2, responses: round2Responses })
+      rounds.push({ round: 3, responses: voteResponses, isVoting: true })
 
       const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0)
 
@@ -303,17 +392,57 @@ export const handler = async (event) => {
       const winner = candidates.length ? candidates[0] : null
       const winnerVotes = winner ? (voteCounts[winner] || 0) : 0
 
-      const winningProposal =
-        winner
-          ? proposalSet.find((p) => normalizeKey(p.model) === normalizeKey(winner)) ||
-            proposalSet.find((p) => p.model === winner) ||
-            null
-          : null
+      const winningProposal = winner
+        ? proposalSet.find((p) => normalizeKey(p.model) === normalizeKey(winner)) ||
+          proposalSet.find((p) => p.model === winner) ||
+          null
+        : null
 
-      if (winningProposal && typeof winningProposal.content === 'string' && winningProposal.content.trim()) {
-        finalResponse =
-          `${winner} ganó (${winnerVotes}/${totalVotes || models.length}).\n\n` +
-          `${winningProposal.content}`
+      // RONDA 4: SÍNTESIS FINAL DEL GANADOR (NUEVO)
+      if (winningProposal && typeof winningProposal.content === 'string') {
+        const winnerModel = models.find(m => normalizeKey(safeName(m)) === normalizeKey(winner))
+        
+        if (winnerModel) {
+          const allProposalsText = proposalSet
+            .map((p, i) => `[${i + 1}] ${p.model}:\n${p.content}`)
+            .join('\n\n')
+
+          const synthesisPrompt =
+            `Eres ${winner}. ¡GANASTE la votación con ${winnerVotes}/${totalVotes} votos!\n\n` +
+            `Lee TODAS las propuestas (incluyendo la tuya):\n\n${allProposalsText}\n\n` +
+            `Lee las críticas que se hicieron:\n\n${criticTextList}\n\n` +
+            `Pregunta original: ${message}\n\n` +
+            `Crea UNA RESPUESTA FINAL INTEGRADA que:\n` +
+            `1. Tome lo mejor de TODAS las propuestas (no solo la tuya)\n` +
+            `2. Solucione las debilidades identificadas en las críticas\n` +
+            `3. Sea completa, clara y definitiva\n` +
+            `4. No menciones que ganaste o que estás sintetizando\n\n` +
+            `Esta es la respuesta que verá el usuario.`
+
+          const synthesisSystemPrompt = withSystem(winnerModel, 'Eres un sintetizador experto.')
+          const synthesisRes = await callModel(winnerModel, synthesisPrompt, synthesisSystemPrompt)
+
+          totalCost += Number(synthesisRes.cost || 0)
+          totalTime += Number(synthesisRes.time || 0)
+
+          rounds.push({ 
+            round: 4, 
+            responses: [{ ...synthesisRes, isSynthesis: true }] 
+          })
+
+          finalResponse = synthesisRes.content || winningProposal.content
+
+          synthesizerInfo = {
+            synthesizer: winnerModel.id,
+            synthesizerName: winner,
+            wasRandom: false,
+            wonVoting: true,
+            votes: winnerVotes,
+            totalVotes: totalVotes
+          }
+        } else {
+          finalResponse = `${winner} ganó (${winnerVotes}/${totalVotes}).\n\n${winningProposal.content}`
+        }
       } else {
         const fb = validProposals[0] || proposals[0]
         finalResponse = fb?.content || 'No se pudo generar respuesta.'
@@ -336,7 +465,8 @@ export const handler = async (event) => {
           totalTime: String(totalTime.toFixed(1)),
           totalRounds: rounds.length
         },
-        ...(votingMeta ? { voting: votingMeta } : {})
+        ...(votingMeta ? { voting: votingMeta } : {}),
+        ...(synthesizerInfo ? { synthesizer: synthesizerInfo } : {})
       }
     }
 
