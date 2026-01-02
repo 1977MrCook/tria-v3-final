@@ -1,7 +1,473 @@
 import { useState, useEffect } from 'react'
-import RatingModal from './RatingModal.jsx'
-import MLDashboard from './MLDashboard.jsx'
-import { saveEvaluation, getEvaluations, getCurrentPhase } from './mlEngine.js'
+
+// ============================================================================
+// ML ENGINE (INLINE)
+// ============================================================================
+
+const STORAGE_KEY = 'tria_evaluations'
+const ML_SETTINGS_KEY = 'tria_ml_settings'
+
+const PHASES = {
+  LEARNING: 'learning',
+  SUGGESTED: 'suggested',
+  OPTIMIZED: 'optimized'
+}
+
+function saveEvaluation(evaluation) {
+  const evaluations = getEvaluations()
+  evaluations.push({
+    ...evaluation,
+    timestamp: Date.now(),
+    id: `eval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  })
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(evaluations))
+  return evaluations
+}
+
+function getEvaluations() {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY)
+    return data ? JSON.parse(data) : []
+  } catch (error) {
+    console.error('Error loading evaluations:', error)
+    return []
+  }
+}
+
+function clearEvaluations() {
+  localStorage.removeItem(STORAGE_KEY)
+  localStorage.removeItem(ML_SETTINGS_KEY)
+}
+
+function getMLSettings() {
+  try {
+    const data = localStorage.getItem(ML_SETTINGS_KEY)
+    return data ? JSON.parse(data) : {
+      mode: 'auto',
+      fixedSynthesizer: null,
+      acceptedRecommendation: false
+    }
+  } catch (error) {
+    return {
+      mode: 'auto',
+      fixedSynthesizer: null,
+      acceptedRecommendation: false
+    }
+  }
+}
+
+function saveMLSettings(settings) {
+  localStorage.setItem(ML_SETTINGS_KEY, JSON.stringify(settings))
+}
+
+function analyzeSynthesizerPerformance(evaluations) {
+  if (!evaluations || evaluations.length === 0) return {}
+
+  const performance = {}
+  
+  evaluations.forEach(e => {
+    const synth = e.synthesizer
+    if (!synth) return
+    
+    if (!performance[synth]) {
+      performance[synth] = {
+        count: 0,
+        totalRating: 0,
+        totalCost: 0,
+        totalTime: 0,
+        ratings: [],
+        byMode: {}
+      }
+    }
+    
+    const avgRating = e.avgRating || calculateAvgRating(e.ratings)
+    
+    performance[synth].count++
+    performance[synth].totalRating += avgRating
+    performance[synth].totalCost += e.cost || 0
+    performance[synth].totalTime += e.time || 0
+    performance[synth].ratings.push(avgRating)
+    
+    const mode = e.mode || 'unknown'
+    if (!performance[synth].byMode[mode]) {
+      performance[synth].byMode[mode] = { count: 0, totalRating: 0 }
+    }
+    performance[synth].byMode[mode].count++
+    performance[synth].byMode[mode].totalRating += avgRating
+  })
+  
+  Object.keys(performance).forEach(synth => {
+    const p = performance[synth]
+    
+    p.avgRating = p.totalRating / p.count
+    p.avgCost = p.totalCost / p.count
+    p.avgTime = p.totalTime / p.count
+    
+    const variance = p.ratings.reduce((sum, r) => {
+      return sum + Math.pow(r - p.avgRating, 2)
+    }, 0) / p.count
+    p.stdDev = Math.sqrt(variance)
+    p.consistency = Math.max(0, 10 - p.stdDev)
+    
+    p.score = (
+      p.avgRating * 0.60 +
+      p.consistency * 0.20 +
+      (1 / Math.max(p.avgCost, 0.001)) * 0.10 * 0.10 +
+      (1 / Math.max(p.avgTime, 1)) * 0.10 * 10
+    )
+    
+    Object.keys(p.byMode).forEach(mode => {
+      const modeData = p.byMode[mode]
+      modeData.avgRating = modeData.totalRating / modeData.count
+    })
+  })
+  
+  return performance
+}
+
+function calculateAvgRating(ratings) {
+  if (!ratings || typeof ratings !== 'object') return 5
+  const values = Object.values(ratings)
+  if (values.length === 0) return 5
+  return values.reduce((a, b) => a + b, 0) / values.length
+}
+
+function getCurrentPhase(evaluations) {
+  const count = evaluations.length
+  
+  if (count < 20) {
+    return {
+      phase: PHASES.LEARNING,
+      progress: (count / 20) * 100,
+      count: count,
+      target: 20,
+      message: `Aprendiendo... ${count}/20 evaluaciones`
+    }
+  }
+  
+  if (count < 50) {
+    return {
+      phase: PHASES.SUGGESTED,
+      progress: ((count - 20) / 30) * 100,
+      count: count,
+      target: 50,
+      message: `Recopilando datos... ${count}/50 evaluaciones`
+    }
+  }
+  
+  return {
+    phase: PHASES.OPTIMIZED,
+    progress: 100,
+    count: count,
+    target: count,
+    message: `Sistema optimizado con ${count} evaluaciones`
+  }
+}
+
+function getPerformanceStats(evaluations) {
+  const performance = analyzeSynthesizerPerformance(evaluations)
+  const phase = getCurrentPhase(evaluations)
+  
+  const sorted = Object.keys(performance)
+    .map(id => ({
+      id,
+      ...performance[id]
+    }))
+    .sort((a, b) => b.score - a.score)
+  
+  return {
+    phase,
+    synthesizers: sorted,
+    totalEvaluations: evaluations.length,
+    avgRatingOverall: evaluations.length > 0
+      ? evaluations.reduce((sum, e) => sum + (e.avgRating || 5), 0) / evaluations.length
+      : 0
+  }
+}
+
+// ============================================================================
+// RATING MODAL (INLINE)
+// ============================================================================
+
+const RATING_CRITERIA = [
+  { key: 'quality', label: 'Calidad General', icon: '📊' },
+  { key: 'speed', label: 'Velocidad', icon: '⚡' },
+  { key: 'costBenefit', label: 'Costo-Beneficio', icon: '💰' },
+  { key: 'clarity', label: 'Claridad', icon: '💡' },
+  { key: 'completeness', label: 'Completitud', icon: '✅' },
+  { key: 'accuracy', label: 'Precisión', icon: '🎯' }
+]
+
+function RatingModal({ isOpen, onClose, onSubmit, debate }) {
+  const [ratings, setRatings] = useState({
+    quality: 7,
+    speed: 7,
+    costBenefit: 7,
+    clarity: 7,
+    completeness: 7,
+    accuracy: 7
+  })
+  const [comment, setComment] = useState('')
+  const [hoveredCriterion, setHoveredCriterion] = useState(null)
+  const [hoveredValue, setHoveredValue] = useState(null)
+
+  if (!isOpen) return null
+
+  const handleSubmit = () => {
+    const avgRating = Object.values(ratings).reduce((a, b) => a + b, 0) / 6
+    onSubmit({
+      ratings,
+      avgRating,
+      comment: comment.trim(),
+      cost: debate?.stats?.totalCost || 0,
+      time: parseFloat(debate?.stats?.totalTime || 0),
+      synthesizer: debate?.synthesizer?.synthesizer || null,
+      synthesizerName: debate?.synthesizer?.synthesizerName || null
+    })
+    onClose()
+  }
+
+  const handleSkip = () => {
+    onClose()
+  }
+
+  return (
+    <>
+      <div className="modal-overlay" onClick={onClose} />
+      <div className="rating-modal" style={{ display: 'flex' }}>
+        <div className="modal-header">
+          <h2>⭐ Evalúa esta respuesta</h2>
+          <button onClick={onClose} className="close-btn">×</button>
+        </div>
+
+        <div className="modal-body">
+          <div className="rating-criteria">
+            {RATING_CRITERIA.map(criterion => (
+              <div key={criterion.key} className="criterion-row">
+                <div className="criterion-label">
+                  <span className="criterion-icon">{criterion.icon}</span>
+                  <span className="criterion-name">{criterion.label}</span>
+                </div>
+                <div className="star-rating">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => (
+                    <button
+                      key={value}
+                      className={`star ${value <= ratings[criterion.key] ? 'filled' : ''} ${
+                        hoveredCriterion === criterion.key && value <= hoveredValue ? 'hovered' : ''
+                      }`}
+                      onClick={() => setRatings({ ...ratings, [criterion.key]: value })}
+                      onMouseEnter={() => {
+                        setHoveredCriterion(criterion.key)
+                        setHoveredValue(value)
+                      }}
+                      onMouseLeave={() => {
+                        setHoveredCriterion(null)
+                        setHoveredValue(null)
+                      }}
+                    >
+                      ⭐
+                    </button>
+                  ))}
+                  <span className="rating-value">{ratings[criterion.key]}/10</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="comment-section">
+            <label>💬 Comentario (opcional)</label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="¿Qué te gustó o qué mejorarías?"
+              rows={3}
+            />
+          </div>
+
+          {debate?.synthesizer && (
+            <div className="synthesis-info">
+              <small>
+                🤖 Síntesis: <strong>{debate.synthesizer.synthesizerName}</strong>
+                {debate.synthesizer.wasRandom && ' (aleatorio)'}
+                {debate.synthesizer.wonVoting && ` (ganó ${debate.synthesizer.votes}/${debate.synthesizer.totalVotes} votos)`}
+              </small>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button onClick={handleSkip} className="btn-secondary">
+            Omitir
+          </button>
+          <button onClick={handleSubmit} className="btn-primary">
+            Enviar Evaluación
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ============================================================================
+// ML DASHBOARD (INLINE)
+// ============================================================================
+
+function MLDashboard({ evaluations, models, onClose }) {
+  const stats = getPerformanceStats(evaluations)
+  const settings = getMLSettings()
+
+  const handleModeChange = (mode) => {
+    saveMLSettings({ ...settings, mode, acceptedRecommendation: mode !== 'auto' })
+  }
+
+  const handleFixedSynthesizerChange = (synthesizerId) => {
+    saveMLSettings({ ...settings, fixedSynthesizer: synthesizerId })
+  }
+
+  const handleClearData = () => {
+    if (confirm('¿Seguro que quieres borrar todos los datos de aprendizaje? Esta acción no se puede deshacer.')) {
+      clearEvaluations()
+      alert('Datos borrados. El sistema comenzará a aprender desde cero.')
+      onClose()
+    }
+  }
+
+  return (
+    <div className="ml-dashboard" style={{ display: 'flex' }}>
+      <div className="dashboard-header">
+        <h2>🤖 Machine Learning</h2>
+        <button onClick={onClose} className="close-btn">×</button>
+      </div>
+
+      <div className="dashboard-body">
+        <div className="ml-status">
+          <h3>📊 Estado del Sistema</h3>
+          <div className="phase-indicator">
+            <div className="phase-badge" data-phase={stats.phase.phase}>
+              {stats.phase.phase === 'learning' && '🌱 Aprendiendo'}
+              {stats.phase.phase === 'suggested' && '📈 Recopilando'}
+              {stats.phase.phase === 'optimized' && '✅ Optimizado'}
+            </div>
+            <p>{stats.phase.message}</p>
+          </div>
+          
+          <div className="progress-bar-container">
+            <div className="progress-bar">
+              <div 
+                className="progress-fill" 
+                style={{ width: `${Math.min(stats.phase.progress, 100)}%` }}
+              />
+            </div>
+            <span className="progress-label">{Math.round(stats.phase.progress)}%</span>
+          </div>
+        </div>
+
+        {stats.synthesizers.length > 0 && (
+          <div className="synthesizer-stats">
+            <h3>⭐ Rendimiento de Sintetizadores</h3>
+            <div className="stats-table">
+              {stats.synthesizers.map((synth, idx) => {
+                const model = models.find(m => m.id === synth.id)
+                return (
+                  <div key={synth.id} className="stat-row" data-rank={idx + 1}>
+                    <div className="stat-rank">#{idx + 1}</div>
+                    <div className="stat-info">
+                      <div className="stat-name">
+                        {model?.name || synth.id}
+                        {idx === 0 && <span className="badge-best">MEJOR</span>}
+                      </div>
+                      <div className="stat-metrics">
+                        <span>⭐ {synth.avgRating.toFixed(1)}/10</span>
+                        <span>📊 Consistencia: {synth.consistency.toFixed(1)}/10</span>
+                        <span>🔢 {synth.count} veces</span>
+                        <span>💰 ${synth.avgCost.toFixed(4)}</span>
+                        <span>⏱️ {synth.avgTime.toFixed(1)}s</span>
+                      </div>
+                    </div>
+                    <div className="stat-score">
+                      <div className="score-circle">{synth.score.toFixed(1)}</div>
+                      <small>Score</small>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="ml-settings">
+          <h3>⚙️ Configuración</h3>
+          
+          <div className="setting-group">
+            <label>Modo de Síntesis</label>
+            <div className="radio-group">
+              <label>
+                <input 
+                  type="radio" 
+                  name="ml-mode" 
+                  value="auto"
+                  checked={settings.mode === 'auto'}
+                  onChange={() => handleModeChange('auto')}
+                />
+                <span>Automático (ML Inteligente) ✨</span>
+              </label>
+              <label>
+                <input 
+                  type="radio" 
+                  name="ml-mode" 
+                  value="random"
+                  checked={settings.mode === 'random'}
+                  onChange={() => handleModeChange('random')}
+                />
+                <span>Siempre Aleatorio 🎲</span>
+              </label>
+              <label>
+                <input 
+                  type="radio" 
+                  name="ml-mode" 
+                  value="fixed"
+                  checked={settings.mode === 'fixed'}
+                  onChange={() => handleModeChange('fixed')}
+                />
+                <span>Forzar Específico 🎯</span>
+              </label>
+            </div>
+          </div>
+
+          {settings.mode === 'fixed' && (
+            <div className="setting-group">
+              <label>Sintetizador Fijo</label>
+              <select 
+                value={settings.fixedSynthesizer || ''}
+                onChange={(e) => handleFixedSynthesizerChange(e.target.value)}
+              >
+                <option value="">Seleccionar...</option>
+                {models.map(model => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div className="ml-actions">
+          <button onClick={handleClearData} className="btn-danger">
+            🗑️ Borrar Datos de Aprendizaje
+          </button>
+          <p className="warning-text">
+            <small>⚠️ Esto reiniciará el sistema desde cero</small>
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// MAIN APP
+// ============================================================================
 
 const AVAILABLE_MODELS = {
   openai: [
@@ -16,9 +482,9 @@ const AVAILABLE_MODELS = {
     { id: 'claude-haiku-4-20250514', name: 'Claude Haiku 4', description: 'Velocidad extrema', icon: '🟣', provider: 'anthropic' },
   ],
   google: [
-    { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash', description: 'Experimental más rápido', icon: '🔵', provider: 'google' },
-    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Máxima capacidad', icon: '🔵', provider: 'google' },
-    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Rápido y eficiente', icon: '🔵', provider: 'google' },
+    { id: 'gemini-3-flash', name: 'Gemini 3 Flash', description: 'Más rápido y actual', icon: '🔵', provider: 'google' },
+    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', description: 'Razonamiento avanzado', icon: '🔵', provider: 'google' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Máxima estabilidad', icon: '🔵', provider: 'google' },
   ]
 }
 
@@ -1018,13 +1484,357 @@ export default function App() {
           margin-bottom: 16px;
           letter-spacing: 0.05em;
         }
+        
+        .rating-criteria {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        
+        .criterion-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+        }
+        
+        .criterion-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 140px;
+        }
+        
+        .criterion-icon {
+          font-size: 20px;
+        }
+        
+        .criterion-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        
+        .star-rating {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        
+        .star {
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 18px;
+          opacity: 0.3;
+          transition: all 0.15s;
+          padding: 0;
+        }
+        
+        .star.filled, .star.hovered {
+          opacity: 1;
+          transform: scale(1.1);
+        }
+        
+        .rating-value {
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--electric-blue);
+          margin-left: 8px;
+          min-width: 40px;
+        }
+        
+        .comment-section {
+          margin-top: 20px;
+        }
+        
+        .comment-section label {
+          display: block;
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 8px;
+          color: var(--text-primary);
+        }
+        
+        .comment-section textarea {
+          width: 100%;
+          padding: 12px;
+          border: 2px solid var(--border);
+          border-radius: 14px;
+          resize: vertical;
+          font-size: 14px;
+          color: var(--text-primary);
+          font-weight: 600;
+          outline: none;
+          transition: all 0.2s;
+        }
+        
+        .comment-section textarea:focus {
+          border-color: var(--electric-blue);
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+        }
+        
+        .synthesis-info {
+          margin-top: 16px;
+          padding: 12px;
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.05), rgba(6, 182, 212, 0.05));
+          border-radius: 10px;
+        }
+        
+        .synthesis-info small {
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+        
+        .modal-footer {
+          padding: 16px 24px;
+          border-top: 2px solid var(--border);
+          display: flex;
+          gap: 12px;
+          justify-content: flex-end;
+        }
+        
+        .btn-primary, .btn-secondary, .btn-danger {
+          padding: 12px 24px;
+          border-radius: 14px;
+          font-weight: 800;
+          cursor: pointer;
+          transition: all 0.2s;
+          font-size: 14px;
+          border: none;
+        }
+        
+        .btn-primary {
+          background: linear-gradient(135deg, var(--electric-blue), var(--cyan));
+          color: white;
+          box-shadow: 0 8px 20px rgba(14, 165, 233, 0.3);
+        }
+        
+        .btn-primary:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 28px rgba(14, 165, 233, 0.4);
+        }
+        
+        .btn-secondary {
+          background: var(--border);
+          color: var(--text-secondary);
+        }
+        
+        .btn-secondary:hover {
+          background: #cbd5e1;
+        }
+        
+        .btn-danger {
+          background: #ef4444;
+          color: white;
+        }
+        
+        .btn-danger:hover {
+          background: #dc2626;
+        }
+        
+        .ml-status, .synthesizer-stats, .ml-settings {
+          margin-bottom: 24px;
+        }
+        
+        .ml-status h3, .synthesizer-stats h3, .ml-settings h3 {
+          font-size: 16px;
+          font-weight: 700;
+          margin-bottom: 12px;
+          color: var(--text-primary);
+        }
+        
+        .phase-indicator p {
+          color: var(--text-secondary);
+          font-weight: 600;
+          margin: 8px 0;
+        }
+        
+        .phase-badge {
+          display: inline-block;
+          padding: 6px 12px;
+          border-radius: 10px;
+          font-size: 13px;
+          font-weight: 700;
+          margin-bottom: 8px;
+        }
+        
+        .phase-badge[data-phase="learning"] {
+          background: rgba(16, 185, 129, 0.1);
+          color: #065f46;
+        }
+        
+        .phase-badge[data-phase="suggested"] {
+          background: rgba(14, 165, 233, 0.1);
+          color: #0b4f74;
+        }
+        
+        .phase-badge[data-phase="optimized"] {
+          background: rgba(16, 185, 129, 0.15);
+          color: #065f46;
+        }
+        
+        .progress-bar-container {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-top: 12px;
+        }
+        
+        .progress-label {
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--electric-blue);
+        }
+        
+        .stats-table {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        
+        .stat-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.03), rgba(6, 182, 212, 0.03));
+          border-radius: 12px;
+          border: 2px solid var(--border);
+        }
+        
+        .stat-row[data-rank="1"] {
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(6, 182, 212, 0.06));
+          border-color: var(--electric-blue);
+        }
+        
+        .stat-rank {
+          font-size: 20px;
+          font-weight: 900;
+          color: var(--text-secondary);
+          min-width: 40px;
+          text-align: center;
+        }
+        
+        .stat-info {
+          flex: 1;
+        }
+        
+        .stat-name {
+          font-size: 14px;
+          font-weight: 700;
+          margin-bottom: 6px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: var(--text-primary);
+        }
+        
+        .badge-best {
+          background: var(--electric-blue);
+          color: white;
+          padding: 2px 8px;
+          border-radius: 6px;
+          font-size: 10px;
+        }
+        
+        .stat-metrics {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          font-weight: 600;
+        }
+        
+        .stat-score {
+          text-align: center;
+        }
+        
+        .score-circle {
+          width: 50px;
+          height: 50px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, var(--electric-blue), var(--cyan));
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          font-weight: 900;
+        }
+        
+        .score-circle + small {
+          margin-top: 4px;
+          font-size: 11px;
+          color: var(--text-secondary);
+          font-weight: 700;
+        }
+        
+        .setting-group {
+          margin-bottom: 16px;
+        }
+        
+        .setting-group label {
+          display: block;
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 8px;
+          color: var(--text-primary);
+        }
+        
+        .radio-group {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        
+        .radio-group label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: normal;
+          cursor: pointer;
+          color: var(--text-primary);
+        }
+        
+        .radio-group input[type="radio"] {
+          width: 18px;
+          height: 18px;
+          accent-color: var(--electric-blue);
+        }
+        
+        .setting-group select {
+          width: 100%;
+          padding: 12px 14px;
+          border: 2px solid var(--border);
+          border-radius: 14px;
+          font-size: 15px;
+          font-weight: 600;
+          color: var(--text-primary);
+          outline: none;
+          transition: all 0.2s;
+        }
+        
+        .setting-group select:focus {
+          border-color: var(--electric-blue);
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+        }
+        
+        .ml-actions {
+          text-align: center;
+        }
+        
+        .warning-text {
+          margin-top: 8px;
+          color: #ef4444;
+        }
       `}</style>
       
       <div className="app-container">
         {showConfig && <div className="overlay" onClick={() => setShowConfig(false)} />}
         {showMLDashboard && <div className="overlay" onClick={() => setShowMLDashboard(false)} />}
 
-        {/* Config Modal */}
         <div className={`config-modal ${showConfig ? 'open' : ''}`} style={{ display: showConfig ? 'flex' : 'none' }}>
           <div className="config-header">
             <h2>⚙️ Configuración</h2>
@@ -1065,7 +1875,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* ML Dashboard Modal */}
         {showMLDashboard && (
           <MLDashboard 
             evaluations={evaluations}
@@ -1074,7 +1883,6 @@ export default function App() {
           />
         )}
 
-        {/* Rating Modal */}
         <RatingModal
           isOpen={showRatingModal}
           onClose={() => setShowRatingModal(false)}
@@ -1082,7 +1890,6 @@ export default function App() {
           debate={pendingRating?.debate}
         />
 
-        {/* Sidebar */}
         <aside className="sidebar">
           <div className="sidebar-header">
             <img src="/logo-tria.jpg" alt="TrIA" className="logo" />
@@ -1122,12 +1929,10 @@ export default function App() {
           )}
         </aside>
 
-        {/* Main Area */}
         <div className="main-area">
-          {/* Header */}
           <header className="header">
             <div>
-              <h1 className="header-title">Orquestación Multi-IA v4.1</h1>
+              <h1 className="header-title">Orquestación Multi-IA v4.2</h1>
             </div>
             <div className="header-stats">
               <div className="stat-card green">
@@ -1146,7 +1951,6 @@ export default function App() {
             </div>
           </header>
 
-          {/* Controls Bar */}
           <div className="controls-bar">
             <div className="mode-buttons-compact">
               {[
@@ -1172,7 +1976,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Model Selector */}
           {showModelSelector && (
             <div className="controls">
               <div className="controls-inner">
@@ -1212,12 +2015,11 @@ export default function App() {
             </div>
           )}
 
-          {/* Chat Area */}
           <div className="chat-area">
             <div className="messages">
               {messages.length === 0 && (
                 <div className="welcome">
-                  <h2>¡Bienvenido a TrIA Platform v4.1!</h2>
+                  <h2>¡Bienvenido a TrIA Platform v4.2!</h2>
                   <p>Colaboración real entre IAs con Machine Learning</p>
                   {mlPhase && (
                     <p className="ml-welcome-hint">
@@ -1291,7 +2093,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Input Area */}
           <div className="input-area">
             <textarea
               value={inputValue}
