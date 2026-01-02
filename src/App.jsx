@@ -482,9 +482,9 @@ const AVAILABLE_MODELS = {
     { id: 'claude-haiku-4-20250514', name: 'Claude Haiku 4', description: 'Velocidad extrema', icon: '🟣', provider: 'anthropic' },
   ],
   google: [
-    { id: 'gemini-3-flash', name: 'Gemini 3 Flash', description: 'Más rápido y actual', icon: '🔵', provider: 'google' },
-    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', description: 'Razonamiento avanzado', icon: '🔵', provider: 'google' },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Máxima estabilidad', icon: '🔵', provider: 'google' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Rápido y eficiente', icon: '🔵', provider: 'google' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Máxima capacidad', icon: '🔵', provider: 'google' },
+    { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash 8B', description: 'Ultra rápido', icon: '🔵', provider: 'google' },
   ]
 }
 
@@ -542,7 +542,7 @@ export default function App() {
           provider: model.provider,
           name: model.name,
           displayName: model.name,
-          systemPrompt: modelInstructions[id] || `Eres ${model.name}. Colabora con las otras IAs para dar la mejor respuesta.`
+          systemPrompt: modelInstructions[id] || `Eres ${model.name}. IMPORTANTE: Estás en TrIA Platform, un sistema de orquestación multi-IA donde múltiples modelos colaboran en tiempo real. Cuando veas respuestas de otras IAs, léelas atentamente y construye sobre ellas para crear una respuesta mejorada y más completa.`
         }
       })
 
@@ -1932,7 +1932,7 @@ export default function App() {
         <div className="main-area">
           <header className="header">
             <div>
-              <h1 className="header-title">Orquestación Multi-IA v4.2</h1>
+              <h1 className="header-title">TrIA Platform v4.2 FIXED</h1>
             </div>
             <div className="header-stats">
               <div className="stat-card green">
