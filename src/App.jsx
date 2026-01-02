@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import './App.css'
-import RatingModal from './RatingModal'
-import MLDashboard from './MLDashboard'
-import { saveEvaluation, getEvaluations, getCurrentPhase } from './mlEngine'
+import RatingModal from './RatingModal.jsx'
+import MLDashboard from './MLDashboard.jsx'
+import { saveEvaluation, getEvaluations, getCurrentPhase } from './mlEngine.js'
 
 const AVAILABLE_MODELS = {
   openai: [
