@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import './App.css'
 import RatingModal from './RatingModal.jsx'
 import MLDashboard from './MLDashboard.jsx'
 import { saveEvaluation, getEvaluations, getCurrentPhase } from './mlEngine.js'
@@ -42,7 +41,6 @@ export default function App() {
   const [totalSpent, setTotalSpent] = useState(0)
   const [responseCount, setResponseCount] = useState(0)
 
-  // Rating & ML
   const [showRatingModal, setShowRatingModal] = useState(false)
   const [pendingRating, setPendingRating] = useState(null)
   const [evaluations, setEvaluations] = useState([])
@@ -121,7 +119,6 @@ export default function App() {
       }
       setResponseCount(prev => prev + 1)
 
-      // Mostrar modal de rating
       setPendingRating({
         models: selectedModelsList.map(m => m.id),
         mode: mode,
@@ -164,298 +161,1157 @@ export default function App() {
   const allModels = [...AVAILABLE_MODELS.openai, ...AVAILABLE_MODELS.anthropic, ...AVAILABLE_MODELS.google]
 
   return (
-    <div className="app-container">
-      {showConfig && <div className="overlay" onClick={() => setShowConfig(false)} />}
-      {showMLDashboard && <div className="overlay" onClick={() => setShowMLDashboard(false)} />}
-
-      {/* Config Modal */}
-      <div className={`config-modal ${showConfig ? 'open' : ''}`}>
-        <div className="config-header">
-          <h2>⚙️ Configuración</h2>
-          <button onClick={() => setShowConfig(false)} className="close-btn">×</button>
-        </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
         
-        <div className="config-content">
-          <div className="config-section">
-            <h3>💰 Presupuesto</h3>
-            <div className="form-group">
-              <label>Moneda</label>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                <option value="CLP">🇨🇱 CLP</option>
-                <option value="USD">🇺🇸 USD</option>
-                <option value="EUR">🇪🇺 EUR</option>
-              </select>
-            </div>
-            
-            <div className="form-group">
-              <label>Límite</label>
-              <input type="number" value={budgetLimit} onChange={(e) => setBudgetLimit(Number(e.target.value))} />
-            </div>
-            
-            <div className="budget-display">
-              <div className="budget-header">
-                <span>Usado</span>
-                <span className="percentage">{budgetPercentage.toFixed(0)}%</span>
+        * {
+          font-family: 'Inter', -apple-system, sans-serif;
+          box-sizing: border-box;
+          -webkit-font-smoothing: antialiased;
+        }
+        
+        body, html {
+          margin: 0;
+          padding: 0;
+          height: 100%;
+          overflow: hidden;
+        }
+        
+        :root {
+          --electric-blue: #0ea5e9;
+          --cyan: #06b6d4;
+          --success: #10b981;
+          --text-primary: #0f172a;
+          --text-secondary: #64748b;
+          --border: #e2e8f0;
+        }
+        
+        @keyframes breathe {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+        
+        @keyframes bounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+          30% { transform: translateY(-8px); opacity: 1; }
+        }
+        
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .app-container {
+          display: flex;
+          height: 100vh;
+          overflow: hidden;
+          background: linear-gradient(180deg, #f0f9ff 0%, #ecfeff 100%);
+        }
+        
+        .sidebar {
+          width: 280px;
+          min-width: 280px;
+          background: white;
+          border-right: 2px solid var(--border);
+          display: flex;
+          flex-direction: column;
+          box-shadow: 4px 0 20px rgba(14, 165, 233, 0.08);
+        }
+        
+        .sidebar-header {
+          padding: 24px 20px;
+          border-bottom: 2px solid var(--border);
+        }
+        
+        .logo {
+          width: 48px;
+          height: 48px;
+          border-radius: 16px;
+          object-fit: cover;
+          box-shadow: 0 10px 30px rgba(14, 165, 233, 0.3);
+          border: 3px solid white;
+        }
+        
+        .logo-text {
+          margin-top: 12px;
+          font-weight: 900;
+          font-size: 24px;
+          color: var(--text-primary);
+          letter-spacing: -0.02em;
+        }
+        
+        .new-chat-btn {
+          margin-top: 16px;
+          width: 100%;
+          border: none;
+          border-radius: 16px;
+          padding: 14px;
+          font-weight: 800;
+          font-size: 14px;
+          color: white;
+          cursor: pointer;
+          background: linear-gradient(135deg, var(--electric-blue), var(--cyan));
+          box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
+          transition: all 0.3s;
+        }
+        
+        .new-chat-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 16px 36px rgba(14, 165, 233, 0.4);
+        }
+        
+        .sidebar-nav {
+          padding: 12px;
+        }
+        
+        .nav-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          color: var(--text-secondary);
+          text-decoration: none;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s;
+          margin-bottom: 6px;
+        }
+        
+        .nav-item:hover {
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(6, 182, 212, 0.08));
+          color: var(--electric-blue);
+        }
+        
+        .nav-item.active {
+          color: var(--electric-blue);
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(6, 182, 212, 0.12));
+          border: 2px solid rgba(14, 165, 233, 0.2);
+        }
+        
+        .badge {
+          margin-left: auto;
+          padding: 4px 10px;
+          border-radius: 10px;
+          font-size: 11px;
+          font-weight: 800;
+          background: var(--electric-blue);
+          color: white;
+        }
+        
+        .ml-mini-status {
+          padding: 16px;
+          margin: 16px 12px;
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.05), rgba(6, 182, 212, 0.05));
+          border-radius: 16px;
+          border: 2px solid rgba(14, 165, 233, 0.15);
+        }
+        
+        .ml-mini-status h4 {
+          margin: 0 0 10px 0;
+          font-size: 13px;
+          font-weight: 800;
+          color: var(--text-primary);
+        }
+        
+        .mini-phase-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border-radius: 10px;
+          font-size: 11px;
+          font-weight: 800;
+          margin-bottom: 10px;
+        }
+        
+        .mini-phase-badge[data-phase="learning"] {
+          background: rgba(16, 185, 129, 0.12);
+          color: #047857;
+        }
+        
+        .mini-phase-badge[data-phase="suggested"] {
+          background: rgba(14, 165, 233, 0.12);
+          color: #0369a1;
+        }
+        
+        .mini-phase-badge[data-phase="optimized"] {
+          background: rgba(16, 185, 129, 0.15);
+          color: #047857;
+        }
+        
+        .mini-progress {
+          height: 6px;
+          background: rgba(226, 232, 240, 0.5);
+          border-radius: 999px;
+          margin-bottom: 10px;
+          overflow: hidden;
+        }
+        
+        .mini-progress-fill {
+          height: 100%;
+          background: linear-gradient(to right, var(--electric-blue), var(--cyan));
+          border-radius: 999px;
+          transition: width 0.4s;
+        }
+        
+        .ml-mini-status small {
+          font-size: 11px;
+          color: var(--text-secondary);
+          font-weight: 600;
+        }
+        
+        .main-area {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        
+        .header {
+          padding: 20px 28px;
+          border-bottom: 2px solid var(--border);
+          background: white;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          box-shadow: 0 4px 16px rgba(14, 165, 233, 0.06);
+        }
+        
+        .header-title {
+          margin: 0;
+          font-size: 22px;
+          font-weight: 900;
+          color: var(--text-primary);
+          letter-spacing: -0.02em;
+        }
+        
+        .header-stats {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        
+        .stat-card {
+          padding: 12px 16px;
+          border-radius: 16px;
+          border: 2px solid;
+          background: white;
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+          font-weight: 800;
+          font-size: 13px;
+          transition: all 0.2s;
+        }
+        
+        .stat-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+        }
+        
+        .stat-card.green {
+          border-color: rgba(16, 185, 129, 0.3);
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(5, 150, 105, 0.06));
+          color: #047857;
+        }
+        
+        .stat-card.blue {
+          border-color: rgba(14, 165, 233, 0.3);
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(6, 182, 212, 0.06));
+          color: #0369a1;
+        }
+        
+        .stat-value {
+          font-size: 18px;
+          font-weight: 900;
+        }
+        
+        .stat-label {
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          color: var(--text-secondary);
+          margin-top: 2px;
+        }
+        
+        .settings-btn {
+          border: 2px solid var(--border);
+          background: white;
+          width: 44px;
+          height: 44px;
+          border-radius: 16px;
+          cursor: pointer;
+          font-size: 20px;
+          transition: all 0.2s;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+        }
+        
+        .settings-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+          border-color: var(--electric-blue);
+        }
+        
+        .controls-bar {
+          padding: 16px 28px;
+          border-bottom: 2px solid var(--border);
+          background: white;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+        }
+        
+        .mode-buttons-compact {
+          display: flex;
+          gap: 10px;
+        }
+        
+        .mode-btn-compact {
+          border: 2px solid var(--border);
+          background: white;
+          padding: 12px 16px;
+          border-radius: 14px;
+          cursor: pointer;
+          font-weight: 800;
+          font-size: 13px;
+          transition: all 0.2s;
+          color: var(--text-secondary);
+        }
+        
+        .mode-btn-compact:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 20px rgba(14, 165, 233, 0.15);
+          color: var(--electric-blue);
+        }
+        
+        .mode-btn-compact.active {
+          color: white;
+          background: linear-gradient(135deg, var(--electric-blue), var(--cyan));
+          box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
+          border-color: transparent;
+        }
+        
+        .toggle-models-btn {
+          border: 2px solid var(--border);
+          background: white;
+          padding: 12px 16px;
+          border-radius: 14px;
+          cursor: pointer;
+          font-weight: 800;
+          font-size: 13px;
+          transition: all 0.2s;
+          color: var(--text-primary);
+        }
+        
+        .toggle-models-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 20px rgba(14, 165, 233, 0.15);
+          border-color: var(--electric-blue);
+        }
+        
+        .controls {
+          padding: 20px 28px;
+          overflow: auto;
+          max-height: 400px;
+          background: white;
+          border-bottom: 2px solid var(--border);
+        }
+        
+        .controls-inner {
+          max-width: 1280px;
+          margin: 0 auto;
+        }
+        
+        .provider-section {
+          margin-bottom: 20px;
+        }
+        
+        .provider-label {
+          font-size: 12px;
+          font-weight: 900;
+          text-transform: uppercase;
+          color: var(--text-secondary);
+          margin-bottom: 12px;
+          letter-spacing: 0.05em;
+        }
+        
+        .model-card {
+          border: 2px solid var(--border);
+          background: white;
+          border-radius: 18px;
+          padding: 16px;
+          margin-bottom: 12px;
+          transition: all 0.2s;
+          animation: fadeIn 0.3s;
+        }
+        
+        .model-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 28px rgba(14, 165, 233, 0.12);
+        }
+        
+        .model-card.selected {
+          border-color: var(--electric-blue);
+          box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2), 0 12px 28px rgba(14, 165, 233, 0.2);
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.03), rgba(6, 182, 212, 0.03));
+        }
+        
+        .model-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          cursor: pointer;
+        }
+        
+        .model-header input[type="checkbox"] {
+          width: 20px;
+          height: 20px;
+          accent-color: var(--electric-blue);
+          cursor: pointer;
+        }
+        
+        .model-info {
+          flex: 1;
+        }
+        
+        .model-name {
+          font-weight: 900;
+          color: var(--text-primary);
+          font-size: 15px;
+        }
+        
+        .model-desc {
+          font-size: 13px;
+          color: var(--text-secondary);
+          margin-top: 2px;
+          font-weight: 600;
+        }
+        
+        .model-icon {
+          font-size: 22px;
+        }
+        
+        .model-instructions-container {
+          margin-top: 14px;
+          padding-top: 14px;
+          border-top: 2px solid var(--border);
+        }
+        
+        .model-instructions {
+          width: 100%;
+          min-height: 70px;
+          border-radius: 14px;
+          border: 2px solid var(--border);
+          background: linear-gradient(135deg, rgba(248, 250, 252, 0.8), white);
+          padding: 12px;
+          resize: vertical;
+          font-size: 14px;
+          color: var(--text-primary);
+          font-weight: 600;
+          outline: none;
+          transition: all 0.2s;
+        }
+        
+        .model-instructions::placeholder {
+          color: var(--text-secondary);
+        }
+        
+        .model-instructions:focus {
+          border-color: var(--electric-blue);
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+        }
+        
+        .chat-area {
+          flex: 1;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .messages {
+          flex: 1;
+          overflow-y: auto;
+          padding: 24px 28px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        
+        .welcome {
+          text-align: center;
+          padding: 100px 20px;
+        }
+        
+        .welcome h2 {
+          font-size: 28px;
+          font-weight: 900;
+          margin-bottom: 12px;
+          color: var(--text-primary);
+        }
+        
+        .welcome p {
+          color: var(--text-secondary);
+          font-size: 16px;
+          font-weight: 600;
+        }
+        
+        .ml-welcome-hint {
+          font-size: 15px;
+          color: var(--electric-blue);
+          margin-top: 16px;
+          font-weight: 700;
+        }
+        
+        .message {
+          display: flex;
+          width: 100%;
+          animation: fadeIn 0.3s;
+        }
+        
+        .message.user {
+          justify-content: flex-end;
+        }
+        
+        .message.assistant {
+          justify-content: flex-start;
+        }
+        
+        .message-content {
+          max-width: 760px;
+          border-radius: 20px;
+          padding: 16px 18px;
+          font-size: 15px;
+          line-height: 1.6;
+          font-weight: 600;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        }
+        
+        .message.user .message-content {
+          color: white;
+          background: linear-gradient(135deg, var(--electric-blue), var(--cyan));
+          box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
+        }
+        
+        .message.assistant .message-content {
+          background: white;
+          border: 2px solid var(--border);
+          color: var(--text-primary);
+        }
+        
+        .message.assistant .message-content p {
+          margin: 0 0 10px 0;
+        }
+        
+        .debate-info {
+          margin-top: 14px;
+          padding-top: 14px;
+          border-top: 2px solid var(--border);
+          font-size: 13px;
+        }
+        
+        .debate-info details {
+          cursor: pointer;
+        }
+        
+        .debate-info summary {
+          font-weight: 800;
+          color: var(--electric-blue);
+          margin-bottom: 10px;
+        }
+        
+        .round {
+          margin-top: 10px;
+          padding: 10px;
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.05), rgba(6, 182, 212, 0.05));
+          border-radius: 12px;
+          border: 2px solid rgba(14, 165, 233, 0.1);
+        }
+        
+        .round strong {
+          display: block;
+          margin-bottom: 6px;
+          font-size: 12px;
+          color: var(--text-primary);
+          font-weight: 800;
+        }
+        
+        .response {
+          margin: 8px 0;
+          padding: 8px;
+          background: white;
+          border-radius: 10px;
+          font-size: 12px;
+          border: 2px solid var(--border);
+        }
+        
+        .response strong {
+          color: var(--electric-blue);
+          font-weight: 800;
+        }
+        
+        .response p {
+          margin: 6px 0 0 0;
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+        
+        .stats {
+          font-size: 12px;
+          font-weight: 800;
+          color: var(--text-secondary);
+          padding: 8px 12px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(6, 182, 212, 0.08));
+          display: inline-block;
+          margin-top: 10px;
+          border: 2px solid rgba(14, 165, 233, 0.15);
+        }
+        
+        .typing {
+          display: inline-flex;
+          gap: 8px;
+          padding: 10px;
+        }
+        
+        .typing span {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--electric-blue);
+          animation: bounce 1.4s infinite;
+        }
+        
+        .typing span:nth-child(2) {
+          animation-delay: 0.2s;
+        }
+        
+        .typing span:nth-child(3) {
+          animation-delay: 0.4s;
+        }
+        
+        .typing-text {
+          font-size: 13px;
+          font-weight: 800;
+          color: var(--electric-blue);
+          margin-left: 10px;
+        }
+        
+        .input-area {
+          padding: 20px 28px;
+          border-top: 2px solid var(--border);
+          background: white;
+          display: flex;
+          gap: 14px;
+          align-items: flex-end;
+          box-shadow: 0 -4px 16px rgba(14, 165, 233, 0.06);
+        }
+        
+        .input-area textarea {
+          flex: 1;
+          min-height: 54px;
+          max-height: 180px;
+          padding: 14px 16px;
+          border-radius: 18px;
+          border: 2px solid var(--border);
+          resize: none;
+          font-size: 15px;
+          color: var(--text-primary);
+          font-weight: 600;
+          outline: none;
+          transition: all 0.2s;
+          background: linear-gradient(135deg, rgba(248, 250, 252, 0.5), white);
+        }
+        
+        .input-area textarea::placeholder {
+          color: var(--text-secondary);
+        }
+        
+        .input-area textarea:focus {
+          border-color: var(--electric-blue);
+          box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.1);
+          background: white;
+        }
+        
+        .send-btn {
+          border: none;
+          cursor: pointer;
+          padding: 14px 20px;
+          border-radius: 18px;
+          font-weight: 900;
+          font-size: 15px;
+          color: white;
+          background: linear-gradient(135deg, var(--electric-blue), var(--cyan));
+          transition: all 0.2s;
+          box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
+        }
+        
+        .send-btn:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 16px 36px rgba(14, 165, 233, 0.4);
+        }
+        
+        .send-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        
+        .overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 40;
+        }
+        
+        .config-modal, .ml-dashboard, .rating-modal {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 90%;
+          max-width: 600px;
+          max-height: 90vh;
+          background: white;
+          border-radius: 24px;
+          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+          z-index: 50;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        
+        .config-modal.open {
+          animation: fadeIn 0.3s;
+        }
+        
+        .modal-header, .config-header, .dashboard-header {
+          padding: 28px;
+          border-bottom: 2px solid var(--border);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        
+        .modal-header h2, .config-header h2, .dashboard-header h2 {
+          font-size: 22px;
+          font-weight: 900;
+          margin: 0;
+          color: var(--text-primary);
+        }
+        
+        .close-btn {
+          background: none;
+          border: none;
+          color: var(--text-secondary);
+          cursor: pointer;
+          font-size: 32px;
+          line-height: 1;
+          padding: 0;
+          width: 36px;
+          height: 36px;
+          transition: all 0.2s;
+        }
+        
+        .close-btn:hover {
+          color: var(--text-primary);
+          transform: rotate(90deg);
+        }
+        
+        .modal-body, .config-content, .dashboard-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 28px;
+        }
+        
+        .budget-display {
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.05), rgba(6, 182, 212, 0.05));
+          padding: 20px;
+          border-radius: 16px;
+          margin-top: 16px;
+          border: 2px solid rgba(14, 165, 233, 0.15);
+        }
+        
+        .budget-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+        
+        .budget-header .percentage {
+          font-size: 16px;
+          font-weight: 900;
+          color: var(--electric-blue);
+        }
+        
+        .progress-bar {
+          width: 100%;
+          height: 10px;
+          background: rgba(226, 232, 240, 0.5);
+          border-radius: 999px;
+          overflow: hidden;
+        }
+        
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(to right, var(--electric-blue), var(--cyan));
+          transition: width 0.4s;
+        }
+        
+        .budget-values {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 10px;
+          font-size: 13px;
+          font-weight: 700;
+        }
+        
+        .budget-values span:first-child {
+          color: var(--text-primary);
+        }
+        
+        .budget-values span:last-child {
+          color: var(--text-secondary);
+        }
+        
+        .form-group {
+          margin-bottom: 16px;
+        }
+        
+        .form-group label {
+          display: block;
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--text-primary);
+          margin-bottom: 8px;
+        }
+        
+        .form-group select, .form-group input {
+          width: 100%;
+          padding: 12px 14px;
+          border: 2px solid var(--border);
+          border-radius: 14px;
+          font-size: 15px;
+          font-weight: 600;
+          color: var(--text-primary);
+          outline: none;
+          transition: all 0.2s;
+        }
+        
+        .form-group select:focus, .form-group input:focus {
+          border-color: var(--electric-blue);
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+        }
+        
+        .config-section {
+          margin-bottom: 28px;
+        }
+        
+        .config-section h3 {
+          font-size: 14px;
+          font-weight: 900;
+          text-transform: uppercase;
+          color: var(--text-secondary);
+          margin-bottom: 16px;
+          letter-spacing: 0.05em;
+        }
+      `}</style>
+      
+      <div className="app-container">
+        {showConfig && <div className="overlay" onClick={() => setShowConfig(false)} />}
+        {showMLDashboard && <div className="overlay" onClick={() => setShowMLDashboard(false)} />}
+
+        {/* Config Modal */}
+        <div className={`config-modal ${showConfig ? 'open' : ''}`} style={{ display: showConfig ? 'flex' : 'none' }}>
+          <div className="config-header">
+            <h2>⚙️ Configuración</h2>
+            <button onClick={() => setShowConfig(false)} className="close-btn">×</button>
+          </div>
+          
+          <div className="config-content">
+            <div className="config-section">
+              <h3>💰 Presupuesto</h3>
+              <div className="form-group">
+                <label>Moneda</label>
+                <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                  <option value="CLP">🇨🇱 CLP</option>
+                  <option value="USD">🇺🇸 USD</option>
+                  <option value="EUR">🇪🇺 EUR</option>
+                </select>
               </div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${budgetPercentage}%` }} />
+              
+              <div className="form-group">
+                <label>Límite</label>
+                <input type="number" value={budgetLimit} onChange={(e) => setBudgetLimit(Number(e.target.value))} />
               </div>
-              <div className="budget-values">
-                <span>${totalSpent.toFixed(0)} {currency}</span>
-                <span>/ ${budgetLimit.toLocaleString()} {currency}</span>
+              
+              <div className="budget-display">
+                <div className="budget-header">
+                  <span>Usado</span>
+                  <span className="percentage">{budgetPercentage.toFixed(0)}%</span>
+                </div>
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${budgetPercentage}%` }} />
+                </div>
+                <div className="budget-values">
+                  <span>${totalSpent.toFixed(0)} {currency}</span>
+                  <span>/ ${budgetLimit.toLocaleString()} {currency}</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* ML Dashboard Modal */}
-      {showMLDashboard && (
-        <MLDashboard 
-          evaluations={evaluations}
-          models={allModels}
-          onClose={() => setShowMLDashboard(false)}
-        />
-      )}
-
-      {/* Rating Modal */}
-      <RatingModal
-        isOpen={showRatingModal}
-        onClose={() => setShowRatingModal(false)}
-        onSubmit={handleRatingSubmit}
-        debate={pendingRating?.debate}
-      />
-
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <img src="/logo-tria.jpg" alt="TrIA" className="logo" />
-          <div className="logo-text">TrIA</div>
-          <button onClick={() => { setMessages([]); setInputValue(''); setTotalSpent(0); setResponseCount(0) }} className="new-chat-btn">
-            + Nueva Conversación
-          </button>
-        </div>
-
-        <nav className="sidebar-nav">
-          <a href="#" className="nav-item active">
-            <span>💬</span>
-            <span>Chat</span>
-            {messages.length > 0 && <span className="badge">{messages.length}</span>}
-          </a>
-          <a href="#" className="nav-item" onClick={(e) => { e.preventDefault(); setShowMLDashboard(true) }}>
-            <span>🤖</span>
-            <span>Machine Learning</span>
-            {mlPhase && <span className="badge">{evaluations.length}</span>}
-          </a>
-        </nav>
-
-        {/* ML Mini Status */}
-        {mlPhase && (
-          <div className="ml-mini-status">
-            <h4>🤖 ML Status</h4>
-            <div className="mini-phase-badge" data-phase={mlPhase.phase}>
-              {mlPhase.phase === 'learning' && '🌱'}
-              {mlPhase.phase === 'suggested' && '📈'}
-              {mlPhase.phase === 'optimized' && '✅'}
-              <span>{mlPhase.count}/{mlPhase.target}</span>
-            </div>
-            <div className="mini-progress">
-              <div className="mini-progress-fill" style={{ width: `${mlPhase.progress}%` }} />
-            </div>
-            <small>{mlPhase.message}</small>
-          </div>
+        {/* ML Dashboard Modal */}
+        {showMLDashboard && (
+          <MLDashboard 
+            evaluations={evaluations}
+            models={allModels}
+            onClose={() => setShowMLDashboard(false)}
+          />
         )}
-      </aside>
 
-      {/* Main Area */}
-      <div className="main-area">
-        {/* Header */}
-        <header className="header">
-          <div>
-            <h1 className="header-title">Orquestación Multi-IA</h1>
-          </div>
-          <div className="header-stats">
-            <div className="stat-card green">
-              <div className="stat-value">{responseCount.toLocaleString()}</div>
-              <div className="stat-label">respuestas</div>
-            </div>
-            
-            <div className="stat-card blue">
-              <div className="stat-value">${(totalSpent / 1000).toFixed(2)}</div>
-              <div className="stat-label">gastado</div>
-            </div>
-            
-            <button onClick={() => setShowConfig(true)} className="settings-btn">
-              ⚙️
+        {/* Rating Modal */}
+        <RatingModal
+          isOpen={showRatingModal}
+          onClose={() => setShowRatingModal(false)}
+          onSubmit={handleRatingSubmit}
+          debate={pendingRating?.debate}
+        />
+
+        {/* Sidebar */}
+        <aside className="sidebar">
+          <div className="sidebar-header">
+            <img src="/logo-tria.jpg" alt="TrIA" className="logo" />
+            <div className="logo-text">TrIA</div>
+            <button onClick={() => { setMessages([]); setInputValue(''); setTotalSpent(0); setResponseCount(0) }} className="new-chat-btn">
+              + Nueva Conversación
             </button>
           </div>
-        </header>
 
-        {/* Controls Bar */}
-        <div className="controls-bar">
-          <div className="mode-buttons-compact">
-            {[
-              { id: 'collaborative', icon: '👥', label: 'Colaborativo' },
-              { id: 'voting', icon: '📋', label: 'Votación' },
-              { id: 'hybrid', icon: '⚡', label: 'Híbrido' }
-            ].map(m => (
-              <button
-                key={m.id}
-                onClick={() => setMode(m.id)}
-                className={`mode-btn-compact ${mode === m.id ? 'active' : ''}`}
-              >
-                {m.icon} {m.label}
+          <nav className="sidebar-nav">
+            <a href="#" className="nav-item active" onClick={(e) => e.preventDefault()}>
+              <span>💬</span>
+              <span>Chat</span>
+              {messages.length > 0 && <span className="badge">{messages.length}</span>}
+            </a>
+            <a href="#" className="nav-item" onClick={(e) => { e.preventDefault(); setShowMLDashboard(true) }}>
+              <span>🤖</span>
+              <span>Machine Learning</span>
+              {mlPhase && <span className="badge">{evaluations.length}</span>}
+            </a>
+          </nav>
+
+          {mlPhase && (
+            <div className="ml-mini-status">
+              <h4>🤖 ML Status</h4>
+              <div className="mini-phase-badge" data-phase={mlPhase.phase}>
+                {mlPhase.phase === 'learning' && '🌱'}
+                {mlPhase.phase === 'suggested' && '📈'}
+                {mlPhase.phase === 'optimized' && '✅'}
+                <span>{mlPhase.count}/{mlPhase.target}</span>
+              </div>
+              <div className="mini-progress">
+                <div className="mini-progress-fill" style={{ width: `${mlPhase.progress}%` }} />
+              </div>
+              <small>{mlPhase.message}</small>
+            </div>
+          )}
+        </aside>
+
+        {/* Main Area */}
+        <div className="main-area">
+          {/* Header */}
+          <header className="header">
+            <div>
+              <h1 className="header-title">Orquestación Multi-IA v4.1</h1>
+            </div>
+            <div className="header-stats">
+              <div className="stat-card green">
+                <div className="stat-value">{responseCount.toLocaleString()}</div>
+                <div className="stat-label">respuestas</div>
+              </div>
+              
+              <div className="stat-card blue">
+                <div className="stat-value">${(totalSpent / 1000).toFixed(2)}</div>
+                <div className="stat-label">gastado</div>
+              </div>
+              
+              <button onClick={() => setShowConfig(true)} className="settings-btn">
+                ⚙️
               </button>
-            ))}
-          </div>
+            </div>
+          </header>
 
-          <button 
-            onClick={() => setShowModelSelector(!showModelSelector)}
-            className="toggle-models-btn"
-          >
-            {showModelSelector ? '▲ Ocultar' : '▼ Seleccionar'} Modelos ({selectedCount})
-          </button>
-        </div>
-
-        {/* Model Selector - Colapsable */}
-        {showModelSelector && (
-          <div className="controls">
-            <div className="controls-inner">
-              {Object.entries(AVAILABLE_MODELS).map(([provider, models]) => (
-                <div key={provider} className="provider-section">
-                  <div className="provider-label">
-                    {provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Anthropic' : 'Google'}
-                  </div>
-                  
-                  {models.map(model => (
-                    <div key={model.id} className={`model-card ${selectedModels[model.id] ? 'selected' : ''}`}>
-                      <div className="model-header" onClick={() => toggleModel(model.id)}>
-                        <input type="checkbox" checked={selectedModels[model.id] || false} onChange={() => {}} />
-                        <div className="model-info">
-                          <div className="model-name">{model.name}</div>
-                          <div className="model-desc">{model.description}</div>
-                        </div>
-                        <span className="model-icon">{model.icon}</span>
-                      </div>
-                      
-                      {selectedModels[model.id] && (
-                        <div className="model-instructions-container">
-                          <textarea
-                            className="model-instructions"
-                            value={modelInstructions[model.id] || ''}
-                            onChange={(e) => setInstruction(model.id, e.target.value)}
-                            placeholder={`Instrucciones personalizadas para ${model.name}...`}
-                            rows="2"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+          {/* Controls Bar */}
+          <div className="controls-bar">
+            <div className="mode-buttons-compact">
+              {[
+                { id: 'collaborative', icon: '👥', label: 'Colaborativo' },
+                { id: 'voting', icon: '📋', label: 'Votación' },
+                { id: 'hybrid', icon: '⚡', label: 'Híbrido' }
+              ].map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setMode(m.id)}
+                  className={`mode-btn-compact ${mode === m.id ? 'active' : ''}`}
+                >
+                  {m.icon} {m.label}
+                </button>
               ))}
             </div>
+
+            <button 
+              onClick={() => setShowModelSelector(!showModelSelector)}
+              className="toggle-models-btn"
+            >
+              {showModelSelector ? '▲ Ocultar' : '▼ Seleccionar'} Modelos ({selectedCount})
+            </button>
           </div>
-        )}
 
-        {/* Chat Area */}
-        <div className="chat-area">
-          <div className="messages">
-            {messages.length === 0 && (
-              <div className="welcome">
-                <h2>¡Bienvenido a TrIA Platform v4.0!</h2>
-                <p>Colaboración real entre IAs con Machine Learning</p>
-                {mlPhase && (
-                  <p className="ml-welcome-hint">
-                    🤖 {mlPhase.message}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`message ${msg.role}`}>
-                <div className="message-content">
-                  <p>{msg.content}</p>
-                  
-                  {msg.debate && msg.debate.rounds && (
-                    <div className="debate-info">
-                      <details>
-                        <summary>📊 Ver debate completo ({msg.debate.rounds.length} rondas)</summary>
-                        {msg.debate.rounds.map((round, ridx) => (
-                          <div key={ridx} className="round">
-                            <strong>
-                              Ronda {ridx + 1}
-                              {round.isCritique && ' - Crítica'}
-                              {round.isVoting && ' - Votación'}
-                              {round.responses?.[0]?.isSynthesis && ' - Síntesis Final'}
-                            </strong>
-                            {round.responses.map((resp, respIdx) => (
-                              <div key={respIdx} className="response">
-                                <strong>{resp.model}:</strong>
-                                <p>{resp.content?.substring(0, 300)}{resp.content?.length > 300 ? '...' : ''}</p>
-                              </div>
-                            ))}
-                          </div>
-                        ))}
-                      </details>
-                      
-                      {msg.debate.stats && (
-                        <div className="stats">
-                          💰 ${(msg.debate.stats.totalCost || 0).toFixed(4)} · 
-                          ⏱️ {msg.debate.stats.totalTime || 0}s · 
-                          🔄 {msg.debate.stats.totalRounds || 0} rondas
-                          {msg.debate.synthesizer && (
-                            <>
-                              {' · '}
-                              🤖 Síntesis: {msg.debate.synthesizer.synthesizerName}
-                              {msg.debate.synthesizer.wasRandom && ' (🎲)'}
-                            </>
-                          )}
-                        </div>
-                      )}
+          {/* Model Selector */}
+          {showModelSelector && (
+            <div className="controls">
+              <div className="controls-inner">
+                {Object.entries(AVAILABLE_MODELS).map(([provider, models]) => (
+                  <div key={provider} className="provider-section">
+                    <div className="provider-label">
+                      {provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Anthropic' : 'Google'}
                     </div>
+                    
+                    {models.map(model => (
+                      <div key={model.id} className={`model-card ${selectedModels[model.id] ? 'selected' : ''}`}>
+                        <div className="model-header" onClick={() => toggleModel(model.id)}>
+                          <input type="checkbox" checked={selectedModels[model.id] || false} onChange={() => {}} />
+                          <div className="model-info">
+                            <div className="model-name">{model.name}</div>
+                            <div className="model-desc">{model.description}</div>
+                          </div>
+                          <span className="model-icon">{model.icon}</span>
+                        </div>
+                        
+                        {selectedModels[model.id] && (
+                          <div className="model-instructions-container">
+                            <textarea
+                              className="model-instructions"
+                              value={modelInstructions[model.id] || ''}
+                              onChange={(e) => setInstruction(model.id, e.target.value)}
+                              placeholder={`Instrucciones personalizadas para ${model.name}...`}
+                              rows="2"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Chat Area */}
+          <div className="chat-area">
+            <div className="messages">
+              {messages.length === 0 && (
+                <div className="welcome">
+                  <h2>¡Bienvenido a TrIA Platform v4.1!</h2>
+                  <p>Colaboración real entre IAs con Machine Learning</p>
+                  {mlPhase && (
+                    <p className="ml-welcome-hint">
+                      🤖 {mlPhase.message}
+                    </p>
                   )}
                 </div>
-              </div>
-            ))}
+              )}
 
-            {isProcessing && (
-              <div className="message assistant">
-                <div className="message-content">
-                  <div className="typing">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`message ${msg.role}`}>
+                  <div className="message-content">
+                    <p>{msg.content}</p>
+                    
+                    {msg.debate && msg.debate.rounds && (
+                      <div className="debate-info">
+                        <details>
+                          <summary>📊 Ver debate completo ({msg.debate.rounds.length} rondas)</summary>
+                          {msg.debate.rounds.map((round, ridx) => (
+                            <div key={ridx} className="round">
+                              <strong>
+                                Ronda {ridx + 1}
+                                {round.isCritique && ' - Crítica'}
+                                {round.isVoting && ' - Votación'}
+                                {round.responses?.[0]?.isSynthesis && ' - Síntesis Final'}
+                              </strong>
+                              {round.responses.map((resp, respIdx) => (
+                                <div key={respIdx} className="response">
+                                  <strong>{resp.model}:</strong>
+                                  <p>{resp.content?.substring(0, 300)}{resp.content?.length > 300 ? '...' : ''}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </details>
+                        
+                        {msg.debate.stats && (
+                          <div className="stats">
+                            💰 ${(msg.debate.stats.totalCost || 0).toFixed(4)} · 
+                            ⏱️ {msg.debate.stats.totalTime || 0}s · 
+                            🔄 {msg.debate.stats.totalRounds || 0} rondas
+                            {msg.debate.synthesizer && (
+                              <>
+                                {' · '}
+                                🤖 Síntesis: {msg.debate.synthesizer.synthesizerName}
+                                {msg.debate.synthesizer.wasRandom && ' (🎲)'}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <span className="typing-text">
-                    {mode === 'voting' ? 'Debatiendo y votando...' : 'Las IAs están colaborando...'}
-                  </span>
                 </div>
-              </div>
-            )}
+              ))}
+
+              {isProcessing && (
+                <div className="message assistant">
+                  <div className="message-content">
+                    <div className="typing">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                    <span className="typing-text">
+                      {mode === 'voting' ? 'Debatiendo y votando...' : 'Las IAs están colaborando...'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Input Area */}
+          <div className="input-area">
+            <textarea
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSend()
+                }
+              }}
+              placeholder="Escribe tu mensaje... (Enter para enviar, Shift+Enter para nueva línea)"
+              rows={2}
+              disabled={isProcessing}
+            />
+            <button onClick={handleSend} disabled={!inputValue.trim() || isProcessing} className="send-btn">
+              🚀 Enviar
+            </button>
           </div>
         </div>
-
-        {/* Input Area */}
-        <div className="input-area">
-          <textarea
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSend()
-              }
-            }}
-            placeholder="Escribe tu mensaje... (Enter para enviar, Shift+Enter para nueva línea)"
-            rows={2}
-            disabled={isProcessing}
-          />
-          <button onClick={handleSend} disabled={!inputValue.trim() || isProcessing} className="send-btn">
-            🚀 Enviar
-          </button>
-        </div>
       </div>
-    </div>
+    </>
   )
 }
