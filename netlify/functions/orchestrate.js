@@ -6,10 +6,14 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY)
 
+// MAPEO CORRECTO DE MODELOS GEMINI (2026 - con Preview)
 const GEMINI_MODELS = {
-  'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp',
+  'gemini-3-flash-preview': 'gemini-3-flash-preview',
+  'gemini-3-pro-preview': 'gemini-3-pro-preview',
   'gemini-1.5-pro': 'gemini-1.5-pro',
-  'gemini-1.5-flash': 'gemini-1.5-flash'
+  'gemini-1.5-flash': 'gemini-1.5-flash',
+  'gemini-1.5-flash-8b': 'gemini-1.5-flash-8b',
+  'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp'
 }
 
 async function callModel(model, prompt, systemPrompt) {
@@ -258,7 +262,7 @@ export const handler = async (event) => {
       )
       const proposalSet = validProposals.length ? validProposals : proposals
 
-      // RONDA 2: CRÍTICA CRUZADA (NUEVO)
+      // RONDA 2: CRÍTICA CRUZADA
       const criticPromises = models.map((m, idx) => {
         const myProposal = proposals[idx]
         const otherProposals = proposalSet
@@ -296,7 +300,7 @@ export const handler = async (event) => {
 
       rounds.push({ round: 2, responses: critics, isCritique: true })
 
-      // RONDA 3: VOTACIÓN (con críticas)
+      // RONDA 3: VOTACIÓN
       const targetMap = new Map()
       proposalSet.forEach((p) => targetMap.set(normalizeKey(p.model), p.model))
 
@@ -357,7 +361,6 @@ export const handler = async (event) => {
           const { target, reason } = parseVote(res.content)
           const resolved = resolveTarget(target)
           
-          // Anti-sesgo: verificar que no vote por sí mismo
           if (resolved && normalizeKey(resolved) !== normalizeKey(me)) {
             voteCounts[resolved] = (voteCounts[resolved] || 0) + 1
             voteDetails.push({ voter: res.model, vote: resolved, reason: reason || '' })
@@ -398,7 +401,7 @@ export const handler = async (event) => {
           null
         : null
 
-      // RONDA 4: SÍNTESIS FINAL DEL GANADOR (NUEVO)
+      // RONDA 4: SÍNTESIS FINAL DEL GANADOR
       if (winningProposal && typeof winningProposal.content === 'string') {
         const winnerModel = models.find(m => normalizeKey(safeName(m)) === normalizeKey(winner))
         
