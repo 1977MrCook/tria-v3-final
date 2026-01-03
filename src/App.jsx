@@ -482,9 +482,9 @@ const AVAILABLE_MODELS = {
     { id: 'claude-haiku-4-20250514', name: 'Claude Haiku 4', description: 'Velocidad extrema', icon: '🟣', provider: 'anthropic' },
   ],
   google: [
-    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Rápido y eficiente', icon: '🔵', provider: 'google' },
-    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Máxima capacidad', icon: '🔵', provider: 'google' },
-    { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash 8B', description: 'Ultra rápido', icon: '🔵', provider: 'google' },
+    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', description: 'Más rápido + inteligente', icon: '🔵', provider: 'google' },
+    { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro', description: 'Máxima inteligencia', icon: '🔵', provider: 'google' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Estable y probado', icon: '🔵', provider: 'google' },
   ]
 }
 
@@ -1329,6 +1329,13 @@ export default function App() {
           z-index: 40;
         }
         
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 40;
+        }
+        
         .config-modal, .ml-dashboard, .rating-modal {
           position: fixed;
           top: 50%;
@@ -1932,7 +1939,7 @@ export default function App() {
         <div className="main-area">
           <header className="header">
             <div>
-              <h1 className="header-title">TrIA Platform v4.2 FIXED</h1>
+              <h1 className="header-title">TrIA Platform v4.3 🚀</h1>
             </div>
             <div className="header-stats">
               <div className="stat-card green">
@@ -2019,8 +2026,8 @@ export default function App() {
             <div className="messages">
               {messages.length === 0 && (
                 <div className="welcome">
-                  <h2>¡Bienvenido a TrIA Platform v4.2!</h2>
-                  <p>Colaboración real entre IAs con Machine Learning</p>
+                  <h2>¡Bienvenido a TrIA Platform v4.3!</h2>
+                  <p>Gemini 3 Preview + OpenAI + Anthropic trabajando juntos</p>
                   {mlPhase && (
                     <p className="ml-welcome-hint">
                       🤖 {mlPhase.message}
